@@ -1,3 +1,6 @@
+#include <unistd.h>
+#include <vector>
+
 #include "common.h"
 #include "entry.h"
 #include "entry_trampolines.h"
@@ -441,6 +444,66 @@ int main(int argc, char **argv) {
 	auto executable = std::make_unique<wibo::Executable>();
 	if (!executable->loadPE(f, true)) {
 		fclose(f);
+		// A command script is not a PE image. Windows hands one to its command
+		// interpreter; there is none here, so WIBO_BATCH_INTERPRETER names a host
+		// program that runs it. GNU make writes one script per recipe line that
+		// needs an interpreter, so without this every such recipe fails.
+		{
+			const char *interpreter = std::getenv("WIBO_BATCH_INTERPRETER");
+			std::string guest = resolvedGuestPath.string();
+			size_t dot = guest.find_last_of('.');
+			bool isScript = false;
+			if (dot != std::string::npos) {
+				std::string ext = guest.substr(dot);
+				for (auto &c : ext) {
+					c = static_cast<char>(tolower(c));
+				}
+				isScript = (ext == ".bat" || ext == ".cmd");
+			}
+			// A host-native executable is not a PE either. The graph shims some
+			// stages with its own tools, which are built for the host, so run
+			// them directly instead of refusing them.
+			if (!isScript) {
+				FILE *probe = fopen(guest.c_str(), "rb");
+				if (probe) {
+					unsigned char magic[4] = {0};
+					size_t got = fread(magic, 1, 4, probe);
+					fclose(probe);
+#ifdef __APPLE__
+					// Native stage shims are Mach-O, sometimes universal.
+					bool native = got == 4 &&
+						((magic[0] == 0xcf && magic[1] == 0xfa && magic[2] == 0xed && magic[3] == 0xfe) ||
+						 (magic[0] == 0xca && magic[1] == 0xfe && magic[2] == 0xba &&
+						  (magic[3] == 0xbe || magic[3] == 0xbf)));
+#else
+					bool native = got == 4 && magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F';
+#endif
+					if (native && access(guest.c_str(), X_OK) == 0) {
+						std::vector<char *> args;
+						args.push_back(const_cast<char *>(guest.c_str()));
+						for (size_t i = 1; i < guestArgs.size(); ++i) {
+							args.push_back(const_cast<char *>(guestArgs[i].c_str()));
+						}
+						args.push_back(nullptr);
+						execv(guest.c_str(), args.data());
+						fprintf(stderr, "wibo: cannot run host executable %s\n", guest.c_str());
+						return 1;
+					}
+				}
+			}
+			if (interpreter && *interpreter && isScript) {
+				std::vector<char *> args;
+				args.push_back(const_cast<char *>(interpreter));
+				args.push_back(const_cast<char *>(guest.c_str()));
+				for (size_t i = 1; i < guestArgs.size(); ++i) {
+					args.push_back(const_cast<char *>(guestArgs[i].c_str()));
+				}
+				args.push_back(nullptr);
+				execv(interpreter, args.data());
+				fprintf(stderr, "wibo: cannot run WIBO_BATCH_INTERPRETER %s\n", interpreter);
+				return 1;
+			}
+		}
 		fprintf(stderr, "Failed to load PE image %s\n", resolvedGuestPath.c_str());
 		return 1;
 	}
