@@ -467,6 +467,19 @@ bool mapArena(std::size_t size, uintptr_t minAddr, uintptr_t maxAddr, bool prefe
 	return false;
 }
 
+// Windows places a process's heap differently from run to run, and some
+// observations depend on that: a value that changes between otherwise identical
+// launches is a pointer. The loader is deterministic, so WIBO_HEAP_SLIDE lets a
+// caller move the guest allocation base by a page-aligned amount and recover it.
+uintptr_t heapSlide() {
+	const char *value = std::getenv("WIBO_HEAP_SLIDE");
+	if (!value || !*value) return 0;
+	uintptr_t slide = static_cast<uintptr_t>(strtoul(value, nullptr, 16));
+	slide &= ~static_cast<uintptr_t>(0xFFFF);
+	if (slide > 0x10000000UL) slide = 0x10000000UL;
+	return slide;
+}
+
 bool createArenaLocked(size_t size) {
 	Arena arena;
 	if (!mapArena(size, kLowMemoryStart, kHeapMax, true, "wibo heap arena", arena)) {
@@ -852,7 +865,9 @@ VmStatus virtualAlloc(void **baseAddress, std::size_t *regionSize, DWORD allocat
 				return VmStatus::InvalidParameter;
 			}
 			length = static_cast<std::size_t>(aligned);
-			if (!findFreeMappingLocked(length, kLowMemoryStart, kTopDownStart, topDown, &base)) {
+			// Guest allocations land bottom-up from here; the slide moves that base
+			// the way Windows moves a process heap between runs.
+			if (!findFreeMappingLocked(length, kLowMemoryStart + heapSlide(), kTopDownStart, topDown, &base)) {
 				return VmStatus::NoMemory;
 			}
 			if (base >= kTwoGB || (base + length) > kTwoGB) {
@@ -1183,7 +1198,7 @@ VmStatus reserveViewRange(std::size_t regionSize, uintptr_t minAddr, uintptr_t m
 		return VmStatus::InvalidParameter;
 	}
 	if (minAddr == 0) {
-		minAddr = kLowMemoryStart;
+		minAddr = kLowMemoryStart + heapSlide();
 	}
 	if (maxAddr == 0) {
 		maxAddr = kTopDownStart;

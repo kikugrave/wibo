@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "fileapi.h"
 
 #include "access.h"
@@ -1769,6 +1770,13 @@ UINT WINAPI GetTempFileNameA(LPCSTR lpPathName, LPCSTR lpPrefixString, UINT uUni
 		return path;
 	};
 
+	if (uUnique == 0 && std::getenv("WIBO_DETERMINISTIC")) {
+		// Observations that compare launches need identical guest behaviour
+		// apart from what the caller varies on purpose. A fresh random name
+		// per launch is not that, so hand out a counter instead.
+		static unsigned int deterministicUnique = 0;
+		uUnique = (++deterministicUnique) & 0xFFFF;
+	}
 	if (uUnique == 0) {
 		std::random_device rd;
 		random_shorts_engine rse(rd());
