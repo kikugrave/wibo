@@ -221,6 +221,25 @@ SIZE_T WINAPI HeapSize(HANDLE hHeap, DWORD dwFlags, LPCVOID lpMem) {
 	return static_cast<SIZE_T>(wibo::heap::guestSize(lpMem));
 }
 
+BOOL WINAPI HeapValidate(HANDLE hHeap, DWORD dwFlags, LPCVOID lpMem) {
+	HOST_CONTEXT_GUARD();
+	VERBOSE_LOG("HeapValidate(%p, 0x%x, %p)\n", hHeap, dwFlags, lpMem);
+	(void)dwFlags;
+	auto record = wibo::handles().getAs<HeapObject>(hHeap);
+	if (!record || !record->canAccess()) {
+		VERBOSE_LOG("-> ERROR_INVALID_HANDLE\n");
+		setLastError(ERROR_INVALID_HANDLE);
+		return FALSE;
+	}
+	// The allocator keeps no corruption metadata to consult, so report a live
+	// heap and a known block as valid. Reporting failure would make callers
+	// that validate defensively abort on a heap that is in fact fine.
+	if (lpMem && wibo::heap::guestSize(lpMem) == 0) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
 BOOL WINAPI HeapFree(HANDLE hHeap, DWORD dwFlags, LPVOID lpMem) {
 	HOST_CONTEXT_GUARD();
 	VERBOSE_LOG("HeapFree(%p, 0x%x, %p)\n", hHeap, dwFlags, lpMem);
