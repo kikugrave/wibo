@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "files.h"
 #include "common.h"
 #include "errors.h"
@@ -116,6 +117,10 @@ static std::string stripTrailingDots(const std::string &s) {
 }
 
 std::filesystem::path pathFromWindows(const char *inStr) {
+	// A guest names the root of its current drive with a leading backslash. A
+	// host path arrives with forward slashes, so the separator tells the two
+	// apart before any normalization happens.
+	const bool driveRelative = inStr[0] == '\\';
 	// Convert to forward slashes
 	std::string str = inStr;
 	std::replace(str.begin(), str.end(), '\\', '/');
@@ -126,8 +131,27 @@ std::filesystem::path pathFromWindows(const char *inStr) {
 	}
 
 	// Remove the drive letter
+	bool hadDriveLetter = false;
 	if (str.rfind("z:/", 0) == 0 || str.rfind("Z:/", 0) == 0 || str.rfind("c:/", 0) == 0 || str.rfind("C:/", 0) == 0) {
 		str.erase(0, 2);
+		hadDriveLetter = true;
+	}
+
+	// A leading separator with no drive letter names the root of the current
+	// drive. Old statically linked CRTs put tmpnam() files there, which on a
+	// POSIX host means the real filesystem root. WIBO_DRIVE_ROOT rebases those
+	// paths onto a writable directory chosen by the caller.
+	if (!hadDriveLetter && driveRelative && str.size() > 1 && str[0] == '/') {
+		if (const char *driveRoot = std::getenv("WIBO_DRIVE_ROOT")) {
+			if (*driveRoot) {
+				std::string rebased = driveRoot;
+				while (!rebased.empty() && rebased.back() == '/') {
+					rebased.pop_back();
+				}
+				rebased += str;
+				str = rebased;
+			}
+		}
 	}
 
 	// Apply Windows trailing-dot normalization per path component.
