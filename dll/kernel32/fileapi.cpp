@@ -1352,6 +1352,44 @@ BOOL WINAPI SetEndOfFile(HANDLE hFile) {
 	return TRUE;
 }
 
+// An observer watching the workspace needs its watch on a new directory
+// before the guest puts anything inside it. Windows subtree notifications
+// give that for free; inotify adds the watch only after the create event is
+// processed, and a file created and deleted in the meantime is never seen.
+// When WIBO_OBSERVER_REQ and WIBO_OBSERVER_ACK name inherited pipe
+// descriptors, directory creation reports the new directory and waits for
+// one byte before returning to the guest.
+static void observerDirectoryBarrier(const std::string &path) {
+	static int requestFd = -2;
+	static int ackFd = -1;
+	if (requestFd == -2) {
+		const char *request = std::getenv("WIBO_OBSERVER_REQ");
+		const char *ack = std::getenv("WIBO_OBSERVER_ACK");
+		requestFd = (request && *request && ack && *ack) ? std::atoi(request) : -1;
+		ackFd = requestFd >= 0 ? std::atoi(ack) : -1;
+	}
+	if (requestFd < 0) {
+		return;
+	}
+	std::error_code ec;
+	std::filesystem::path absolute = std::filesystem::absolute(path, ec);
+	std::string line = "mkdir " + (ec ? path : absolute.string()) + "\n";
+	size_t offset = 0;
+	while (offset < line.size()) {
+		ssize_t written = write(requestFd, line.data() + offset, line.size() - offset);
+		if (written < 0 && errno == EINTR) {
+			continue;
+		}
+		if (written <= 0) {
+			return;
+		}
+		offset += static_cast<size_t>(written);
+	}
+	char byte = 0;
+	while (read(ackFd, &byte, 1) < 0 && errno == EINTR) {
+	}
+}
+
 BOOL WINAPI CreateDirectoryA(LPCSTR lpPathName, LPSECURITY_ATTRIBUTES lpSecurityAttributes) {
 	HOST_CONTEXT_GUARD();
 	(void)lpSecurityAttributes;
@@ -1365,6 +1403,7 @@ BOOL WINAPI CreateDirectoryA(LPCSTR lpPathName, LPSECURITY_ATTRIBUTES lpSecurity
 		setLastErrorFromErrno();
 		return FALSE;
 	}
+	observerDirectoryBarrier(path);
 	return TRUE;
 }
 
