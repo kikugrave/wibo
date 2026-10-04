@@ -1,3 +1,4 @@
+#include "debug_stub.h"
 #include "common.h"
 #include "errors.h"
 #include "heap.h"
@@ -183,6 +184,7 @@ static DWORD sectionProtectFromCharacteristics(uint32_t characteristics) {
 
 wibo::Executable::~Executable() {
 	if (imageBase) {
+		wibo::debugstub::moduleUnmapped(reinterpret_cast<uintptr_t>(imageBase));
 		wibo::heap::virtualFree(imageBase, 0, MEM_RELEASE);
 		imageBase = nullptr;
 	}

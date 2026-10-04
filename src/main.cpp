@@ -2,6 +2,7 @@
 #include <vector>
 
 #include "common.h"
+#include "debug_stub.h"
 #include "entry.h"
 #include "entry_trampolines.h"
 #include "files.h"
@@ -509,7 +510,11 @@ int main(int argc, char **argv) {
 	}
 	fclose(f);
 
+	wibo::debugstub::moduleMapped(resolvedGuestPath.c_str(), reinterpret_cast<uintptr_t>(executable->imageBase), executable->imageSize);
 	const auto entryPoint = reinterpret_cast<EntryProc>(executable->entryPoint);
+	const intptr_t relocationDelta = executable->relocationDelta;
+	const std::string imageName = resolvedGuestPath.filename().string();
+	const uintptr_t imageBase = reinterpret_cast<uintptr_t>(executable->imageBase);
 	if (!entryPoint) {
 		fprintf(stderr, "Executable %s has no entry point\n", resolvedGuestPath.c_str());
 		return 1;
@@ -537,6 +542,7 @@ int main(int argc, char **argv) {
 	kernel32::setLastError(0);
 
 	// Invoke the damn thing
+	wibo::debugstub::install(relocationDelta, imageName.c_str(), imageBase);
 	call_EntryProc(entryPoint);
 	DEBUG_LOG("We came back\n");
 	wibo::shutdownModuleRegistry();

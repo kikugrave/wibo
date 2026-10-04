@@ -1,3 +1,4 @@
+#include "../../src/debug_stub.h"
 #include "processthreadsapi.h"
 
 #include "common.h"
@@ -300,6 +301,7 @@ DWORD_PTR WINAPI SetThreadAffinityMask(HANDLE hThread, DWORD_PTR dwThreadAffinit
 [[noreturn]] void exitInternal(DWORD exitCode) {
 	DEBUG_LOG("exitInternal(%u)\n", exitCode);
 	wibo::handles().clear();
+	wibo::debugstub::reportExit(static_cast<int>(exitCode));
 	_exit(static_cast<int>(exitCode));
 }
 

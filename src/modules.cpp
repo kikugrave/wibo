@@ -1,3 +1,4 @@
+#include "debug_stub.h"
 #include "modules.h"
 
 #include "common.h"
@@ -1273,6 +1274,7 @@ static ModuleInfo *loadModuleInternal(const std::string &dllName) {
 			return nullptr;
 		}
 		fclose(file);
+		wibo::debugstub::moduleMapped(path.c_str(), reinterpret_cast<uintptr_t>(executable->imageBase), executable->imageSize);
 
 		ModulePtr info = std::make_unique<ModuleInfo>();
 		HANDLE handle = g_nextStubHandle++;

@@ -256,12 +256,14 @@ add_embedded_wine_dll(wibo dll/ucrtbase.cpp WIBO_HAS_UCRTBASE "${UCRTBASE_DLL}")
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_sources(wibo PRIVATE
+        src/debug_stub.cpp
         src/async_io_epoll.cpp
         src/processes_linux.cpp
         src/setup_linux.cpp
     )
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     target_sources(wibo PRIVATE
+        src/debug_stub_darwin.cpp
         src/async_io_kqueue.cpp
         src/processes_darwin.cpp
         src/setup_darwin.cpp
